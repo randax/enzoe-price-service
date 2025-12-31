@@ -1,0 +1,19 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/entsoe_prices"
+max_connections = 10
+min_connections = 2
+connect_timeout_seconds = 30
+
+[entsoe]
+security_token = ""
+base_url = "https://web-api.tp.entsoe.eu/api"
+rate_limit_per_minute = 300
+timeout_seconds = 30
+
+[scheduler]
+enabled = true
+fetch_times_cet = ["13:00", "14:00", "15:00", "16:00"]
