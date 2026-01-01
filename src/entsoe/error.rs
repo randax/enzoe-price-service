@@ -25,6 +25,16 @@ pub enum EntsoeError {
 
     #[error("Failed to parse timestamp: {0}")]
     TimestampParseError(String),
+
+    #[error("Missing first period point at position 1, cannot forward-fill")]
+    MissingFirstPeriod,
+
+    #[error("Period validation failed: expected {expected} points, interval {start} to {end}")]
+    PeriodCountMismatch {
+        expected: usize,
+        start: String,
+        end: String,
+    },
 }
 
 impl EntsoeError {

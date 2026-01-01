@@ -9,6 +9,8 @@ pub const ENTSOE_FETCH_ERRORS_TOTAL: &str = "entsoe_fetch_errors_total";
 pub const ENTSOE_FETCH_DURATION_SECONDS: &str = "entsoe_fetch_duration_seconds";
 pub const ENTSOE_ZONES_WITH_TOMORROW_DATA: &str = "entsoe_zones_with_tomorrow_data";
 pub const ENTSOE_RATE_LIMIT_WAITS_TOTAL: &str = "entsoe_rate_limit_waits_total";
+pub const ENTSOE_GAPS_FILLED_TOTAL: &str = "entsoe_gaps_filled_total";
+pub const ENTSOE_PRICES_AGGREGATED_TOTAL: &str = "entsoe_prices_aggregated_total";
 
 // HTTP request metrics
 pub const HTTP_REQUEST_DURATION_SECONDS: &str = "http_request_duration_seconds";
@@ -76,6 +78,20 @@ pub fn update_zones_with_tomorrow_data(count: u64) {
 
 pub fn record_rate_limit_wait() {
     counter!(ENTSOE_RATE_LIMIT_WAITS_TOTAL).increment(1);
+}
+
+pub fn record_gaps_filled(zone_code: &str, count: u64) {
+    counter!(ENTSOE_GAPS_FILLED_TOTAL, "zone_code" => zone_code.to_string()).increment(count);
+}
+
+pub fn record_prices_aggregated(zone_code: &str, original_count: u64, aggregated_count: u64) {
+    counter!(
+        ENTSOE_PRICES_AGGREGATED_TOTAL,
+        "zone_code" => zone_code.to_string(),
+        "original" => original_count.to_string(),
+        "aggregated" => aggregated_count.to_string()
+    )
+    .increment(1);
 }
 
 pub fn record_db_query_duration(operation: &str, duration: Duration) {

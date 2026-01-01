@@ -16,8 +16,8 @@ async fn main() -> Result<()> {
     let metrics_handle = init_metrics();
 
     let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "json".to_string());
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "entsoe_price_fetcher=debug,tower_http=debug".into());
+    let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "entsoe_price_fetcher=info,tower_http=info".to_string());
+    let env_filter = tracing_subscriber::EnvFilter::new(default_filter);
 
     if log_format == "json" {
         tracing_subscriber::registry()
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    let router = create_router(Arc::clone(&repository), metrics_handle);
+    let router = create_router(Arc::clone(&repository), metrics_handle, Some(Arc::clone(&fetcher)));
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = TcpListener::bind(&addr).await?;
     info!(host = %config.server.host, port = %config.server.port, "API server listening");

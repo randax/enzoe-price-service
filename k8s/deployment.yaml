@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: entsoe-price-fetcher
+  labels:
+    app: entsoe-price-fetcher
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: entsoe-price-fetcher
+  template:
+    metadata:
+      labels:
+        app: entsoe-price-fetcher
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: app
+          image: entsoe-price-fetcher:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: APP_SERVER__HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_SERVER__HOST
+            - name: APP_SERVER__PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_SERVER__PORT
+            - name: APP_SCHEDULER__ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_SCHEDULER__ENABLED
+            - name: APP_ENTSOE__BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_ENTSOE__BASE_URL
+            - name: APP_ENTSOE__RATE_LIMIT_PER_MINUTE
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_ENTSOE__RATE_LIMIT_PER_MINUTE
+            - name: APP_ENTSOE__TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_ENTSOE__TIMEOUT_SECONDS
+            - name: APP_DATABASE__MAX_CONNECTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_DATABASE__MAX_CONNECTIONS
+            - name: APP_DATABASE__MIN_CONNECTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_DATABASE__MIN_CONNECTIONS
+            - name: APP_DATABASE__CONNECT_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: entsoe-price-fetcher-config
+                  key: APP_DATABASE__CONNECT_TIMEOUT_SECONDS
+            - name: APP_DATABASE__URL
+              valueFrom:
+                secretKeyRef:
+                  name: entsoe-secrets
+                  key: database-url
+            - name: APP_ENTSOE__SECURITY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: entsoe-secrets
+                  key: entsoe-token
+            - name: RUST_LOG
+              value: "info"
+            - name: LOG_FORMAT
+              value: "json"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

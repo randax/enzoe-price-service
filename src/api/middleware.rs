@@ -10,6 +10,7 @@ use axum::{
     response::Response,
 };
 use tower::{Layer, Service};
+use tracing::Span;
 use uuid::Uuid;
 
 use crate::metrics;
@@ -69,7 +70,9 @@ where
         req.extensions_mut().insert(correlation_id.clone());
 
         let mut inner = self.inner.clone();
+        let correlation_id_clone = correlation_id.0.clone();
         Box::pin(async move {
+            Span::current().record("correlation_id", &correlation_id_clone);
             let mut response = inner.call(req).await?;
             response.headers_mut().insert(
                 "X-Correlation-Id",

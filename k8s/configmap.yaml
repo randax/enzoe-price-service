@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: entsoe-price-fetcher-config
+data:
+  APP_SERVER__HOST: "0.0.0.0"
+  APP_SERVER__PORT: "8080"
+  APP_SCHEDULER__ENABLED: "true"
+  APP_ENTSOE__BASE_URL: "https://web-api.tp.entsoe.eu/api"
+  APP_ENTSOE__RATE_LIMIT_PER_MINUTE: "300"
+  APP_ENTSOE__TIMEOUT_SECONDS: "30"
+  APP_DATABASE__MAX_CONNECTIONS: "10"
+  APP_DATABASE__MIN_CONNECTIONS: "2"
+  APP_DATABASE__CONNECT_TIMEOUT_SECONDS: "30"

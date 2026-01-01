@@ -50,7 +50,12 @@ impl AppConfig {
                 config::File::from(PathBuf::from(&config_dir).join("local.toml"))
                     .required(false),
             )
-            .add_source(config::Environment::with_prefix("APP").separator("__"));
+            .add_source(
+                config::Environment::with_prefix("APP")
+                    .prefix_separator("_")
+                    .separator("__")
+                    .try_parsing(true)
+            );
 
         builder.build()?.try_deserialize()
     }

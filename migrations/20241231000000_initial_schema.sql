@@ -1,6 +1,3 @@
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS pg_partman;
-
 -- Bidding zones registry table
 CREATE TABLE bidding_zones (
     zone_code       VARCHAR(20) PRIMARY KEY,
@@ -17,7 +14,7 @@ CREATE TABLE bidding_zones (
 -- Index for country-based queries
 CREATE INDEX idx_bidding_zones_country ON bidding_zones(country_code) WHERE active = TRUE;
 
--- Electricity prices table (partitioned by month)
+-- Electricity prices table
 CREATE TABLE electricity_prices (
     timestamp       TIMESTAMPTZ NOT NULL,
     bidding_zone    VARCHAR(20) NOT NULL REFERENCES bidding_zones(zone_code),
@@ -27,15 +24,6 @@ CREATE TABLE electricity_prices (
     fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
     PRIMARY KEY (timestamp, bidding_zone)
-) PARTITION BY RANGE (timestamp);
-
--- Create initial partitions for current and next 3 months
-SELECT partman.create_parent(
-    p_parent_table := 'public.electricity_prices',
-    p_control := 'timestamp',
-    p_type := 'native',
-    p_interval := '1 month',
-    p_premake := 3
 );
 
 -- BRIN index on timestamp for efficient range scans

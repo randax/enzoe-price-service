@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: entsoe_prices
+      POSTGRES_HOST_AUTH_METHOD: trust
+    # NOTE: pg_partman_bgw removed - extension not installed in base postgres:18 image
+    # To enable pg_partman, build a custom image with: apt-get install -y postgresql-18-partman
+    # Then uncomment: command: postgres -c shared_preload_libraries=pg_partman_bgw
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_DATABASE__URL: postgres://postgres:postgres@db:5432/entsoe_prices?sslmode=disable
+      APP_ENTSOE__SECURITY_TOKEN: ${ENTSOE_SECURITY_TOKEN}
+      RUST_LOG: info
+      LOG_FORMAT: pretty
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

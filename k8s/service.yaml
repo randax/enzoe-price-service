@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: entsoe-price-fetcher
+  labels:
+    app: entsoe-price-fetcher
+spec:
+  type: ClusterIP
+  selector:
+    app: entsoe-price-fetcher
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  sessionAffinity: None

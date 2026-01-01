@@ -137,7 +137,6 @@ impl EntsoeClient {
         date: NaiveDate,
     ) -> Result<Vec<Price>, EntsoeError> {
         let start_time = Instant::now();
-        metrics::record_fetch_attempt(&zone.zone_code, "started");
 
         self.acquire_rate_limit_permit().await;
 
@@ -201,6 +200,8 @@ impl EntsoeClient {
                     EntsoeError::HttpError(_) => "http_error",
                     EntsoeError::InvalidResolution(_) => "invalid_resolution",
                     EntsoeError::TimestampParseError(_) => "timestamp_parse_error",
+                    EntsoeError::MissingFirstPeriod => "missing_first_period",
+                    EntsoeError::PeriodCountMismatch { .. } => "period_count_mismatch",
                 };
                 metrics::record_fetch_error(&zone.zone_code, error_type);
             }

@@ -1,0 +1,32 @@
+# Rust build artifacts
+target/
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.*
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# Docker files
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Logs
+*.log
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# OS files
+.DS_Store

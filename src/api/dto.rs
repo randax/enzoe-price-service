@@ -196,6 +196,17 @@ pub struct DateRangeQuery {
     pub end: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct FetchResponse {
+    pub status: String,
+    pub succeeded: usize,
+    pub failed: usize,
+    pub no_data: usize,
+    pub total_prices_stored: usize,
+    pub errors: Vec<String>,
+    pub duration_ms: u64,
+}
+
 impl DateRangeQuery {
     pub fn parse(&self) -> Result<(DateTime<Utc>, DateTime<Utc>), String> {
         let start = match &self.start {

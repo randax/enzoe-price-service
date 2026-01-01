@@ -85,11 +85,17 @@ impl IntoResponse for AppErrorWithContext {
             "timestamp": Utc::now().to_rfc3339()
         });
 
-        if let Some(correlation_id) = self.correlation_id {
+        if let Some(ref correlation_id) = self.correlation_id {
             body["correlation_id"] = json!(correlation_id);
         }
 
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if let Some(correlation_id) = self.correlation_id {
+            if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&correlation_id) {
+                response.headers_mut().insert("X-Correlation-Id", header_value);
+            }
+        }
+        response
     }
 }
 
