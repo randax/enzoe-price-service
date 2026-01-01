@@ -11,7 +11,7 @@ use crate::metrics;
 use super::dto::{
     BackfillRequest, BackfillResponse, CountriesResponse, CountryInfo, CountryPricesResponse,
     DateRangeQuery, FetchResponse, GapInfo, HealthResponse, LatestPricesResponse, ReadyResponse,
-    ZoneInfo, ZonePricesResponse, ZonesResponse,
+    TimezoneQuery, ZoneInfo, ZonePricesResponse, ZonesResponse,
 };
 use super::error::{AppError, AppErrorWithContext};
 use super::middleware::CorrelationId;
@@ -69,7 +69,7 @@ pub async fn get_prices_by_zone(
         .map_err(|e| AppError::from(e).with_correlation_id(cid.clone()))?;
     metrics::record_db_query_duration("get_prices_by_zone", prices_start.elapsed());
 
-    Ok(Json(ZonePricesResponse::new(&zone, prices)))
+    Ok(Json(ZonePricesResponse::new(&zone, prices, query.timezone.as_deref())))
 }
 
 pub async fn get_prices_by_country(
@@ -113,11 +113,13 @@ pub async fn get_prices_by_country(
         country_name,
         &zones,
         prices_by_zone,
+        query.timezone.as_deref(),
     )))
 }
 
 pub async fn get_latest_prices(
     State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
     Extension(correlation_id): Extension<CorrelationId>,
 ) -> Result<Json<LatestPricesResponse>, AppErrorWithContext> {
     let cid = Some(correlation_id.0.clone());
@@ -138,7 +140,7 @@ pub async fn get_latest_prices(
         .map_err(|e| AppError::from(e).with_correlation_id(cid.clone()))?;
     metrics::record_db_query_duration("load_zones", zones_start.elapsed());
 
-    Ok(Json(LatestPricesResponse::new(prices, &zones)))
+    Ok(Json(LatestPricesResponse::new(prices, &zones, query.timezone.as_deref())))
 }
 
 pub async fn list_zones(

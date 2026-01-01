@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, Utc};
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -8,15 +9,18 @@ use crate::models::{BiddingZone, Price};
 
 #[derive(Debug, Serialize)]
 pub struct PricePoint {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: String,
+    pub timestamp_utc: DateTime<Utc>,
     pub price: Decimal,
 }
 
-impl From<&Price> for PricePoint {
-    fn from(p: &Price) -> Self {
+impl PricePoint {
+    pub fn new(price: &Price, tz: &Tz) -> Self {
+        let local_time = price.timestamp.with_timezone(tz);
         Self {
-            timestamp: p.timestamp,
-            price: p.price_kwh,
+            timestamp: local_time.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+            timestamp_utc: price.timestamp,
+            price: price.price_kwh,
         }
     }
 }
@@ -27,6 +31,7 @@ pub struct ZonePricesResponse {
     pub zone_name: String,
     pub country_code: String,
     pub country_name: String,
+    pub timezone: String,
     pub currency: String,
     pub unit: String,
     pub prices: Vec<PricePoint>,
@@ -34,15 +39,20 @@ pub struct ZonePricesResponse {
 }
 
 impl ZonePricesResponse {
-    pub fn new(zone: &BiddingZone, prices: Vec<Price>) -> Self {
+    pub fn new(zone: &BiddingZone, prices: Vec<Price>, timezone: Option<&str>) -> Self {
+        let tz: Tz = timezone
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| zone.timezone.parse().unwrap_or(chrono_tz::UTC));
+        
         Self {
             zone_code: zone.zone_code.clone(),
             zone_name: zone.zone_name.clone(),
             country_code: zone.country_code.clone(),
             country_name: zone.country_name.clone(),
+            timezone: tz.to_string(),
             currency: "EUR".to_string(),
             unit: "kWh".to_string(),
-            prices: prices.iter().map(PricePoint::from).collect(),
+            prices: prices.iter().map(|p| PricePoint::new(p, &tz)).collect(),
             fetched_at: Utc::now(),
         }
     }
@@ -52,6 +62,7 @@ impl ZonePricesResponse {
 pub struct ZonePrices {
     pub zone_code: String,
     pub zone_name: String,
+    pub timezone: String,
     pub prices: Vec<PricePoint>,
 }
 
@@ -71,14 +82,20 @@ impl CountryPricesResponse {
         country_name: String,
         zones: &[BiddingZone],
         prices_by_zone: HashMap<String, Vec<Price>>,
+        timezone: Option<&str>,
     ) -> Self {
         let zone_prices: Vec<ZonePrices> = zones
             .iter()
             .filter_map(|zone| {
+                let tz: Tz = timezone
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| zone.timezone.parse().unwrap_or(chrono_tz::UTC));
+                
                 prices_by_zone.get(&zone.zone_code).map(|prices| ZonePrices {
                     zone_code: zone.zone_code.clone(),
                     zone_name: zone.zone_name.clone(),
-                    prices: prices.iter().map(PricePoint::from).collect(),
+                    timezone: tz.to_string(),
+                    prices: prices.iter().map(|p| PricePoint::new(p, &tz)).collect(),
                 })
             })
             .collect();
@@ -99,7 +116,9 @@ pub struct LatestPriceEntry {
     pub zone_code: String,
     pub zone_name: String,
     pub country_code: String,
-    pub timestamp: DateTime<Utc>,
+    pub timezone: String,
+    pub timestamp: String,
+    pub timestamp_utc: DateTime<Utc>,
     pub price: Decimal,
 }
 
@@ -110,7 +129,7 @@ pub struct LatestPricesResponse {
 }
 
 impl LatestPricesResponse {
-    pub fn new(prices: Vec<Price>, zones: &[BiddingZone]) -> Self {
+    pub fn new(prices: Vec<Price>, zones: &[BiddingZone], timezone: Option<&str>) -> Self {
         let zone_map: HashMap<&str, &BiddingZone> = zones
             .iter()
             .map(|z| (z.zone_code.as_str(), z))
@@ -119,12 +138,21 @@ impl LatestPricesResponse {
         let entries: Vec<LatestPriceEntry> = prices
             .into_iter()
             .filter_map(|p| {
-                zone_map.get(p.bidding_zone.as_str()).map(|zone| LatestPriceEntry {
-                    zone_code: p.bidding_zone,
-                    zone_name: zone.zone_name.clone(),
-                    country_code: zone.country_code.clone(),
-                    timestamp: p.timestamp,
-                    price: p.price_kwh,
+                zone_map.get(p.bidding_zone.as_str()).map(|zone| {
+                    let tz: Tz = timezone
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_else(|| zone.timezone.parse().unwrap_or(chrono_tz::UTC));
+                    let local_time = p.timestamp.with_timezone(&tz);
+                    
+                    LatestPriceEntry {
+                        zone_code: p.bidding_zone,
+                        zone_name: zone.zone_name.clone(),
+                        country_code: zone.country_code.clone(),
+                        timezone: tz.to_string(),
+                        timestamp: local_time.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
+                        timestamp_utc: p.timestamp,
+                        price: p.price_kwh,
+                    }
                 })
             })
             .collect();
@@ -191,9 +219,15 @@ pub struct ReadyResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TimezoneQuery {
+    pub timezone: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DateRangeQuery {
     pub start: Option<String>,
     pub end: Option<String>,
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
