@@ -9,9 +9,9 @@ use chrono::Utc;
 use crate::metrics;
 
 use super::dto::{
-    CountriesResponse, CountryInfo, CountryPricesResponse, DateRangeQuery, FetchResponse,
-    HealthResponse, LatestPricesResponse, ReadyResponse, ZoneInfo, ZonePricesResponse,
-    ZonesResponse,
+    BackfillRequest, BackfillResponse, CountriesResponse, CountryInfo, CountryPricesResponse,
+    DateRangeQuery, FetchResponse, GapInfo, HealthResponse, LatestPricesResponse, ReadyResponse,
+    ZoneInfo, ZonePricesResponse, ZonesResponse,
 };
 use super::error::{AppError, AppErrorWithContext};
 use super::middleware::CorrelationId;
@@ -214,6 +214,61 @@ pub async fn trigger_fetch(
         failed: summary.failed,
         no_data: summary.no_data,
         total_prices_stored: summary.total_prices_stored,
+        errors: summary.errors,
+        duration_ms: start.elapsed().as_millis() as u64,
+    }))
+}
+
+pub async fn backfill_prices(
+    State(state): State<AppState>,
+    Extension(correlation_id): Extension<CorrelationId>,
+    Json(request): Json<BackfillRequest>,
+) -> Result<Json<BackfillResponse>, AppErrorWithContext> {
+    let cid = Some(correlation_id.0.clone());
+
+    let fetcher = state
+        .fetcher
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("Fetcher not configured".into()).with_correlation_id(cid.clone()))?;
+
+    // Parse dates
+    let start_date = chrono::NaiveDate::parse_from_str(&request.start, "%Y-%m-%d")
+        .map_err(|e| AppError::BadRequest(format!("Invalid start date: {}. Use YYYY-MM-DD format.", e)).with_correlation_id(cid.clone()))?;
+    
+    let end_date = chrono::NaiveDate::parse_from_str(&request.end, "%Y-%m-%d")
+        .map_err(|e| AppError::BadRequest(format!("Invalid end date: {}. Use YYYY-MM-DD format.", e)).with_correlation_id(cid.clone()))?;
+
+    if start_date > end_date {
+        return Err(AppError::BadRequest("Start date must be before or equal to end date".into()).with_correlation_id(cid));
+    }
+
+    let start = Instant::now();
+    let summary = fetcher
+        .backfill_missing(start_date, end_date, request.zones)
+        .await
+        .map_err(|e| AppError::InternalError(e.to_string()).with_correlation_id(cid.clone()))?;
+
+    let status = if summary.errors.is_empty() {
+        if summary.dates_with_gaps == 0 {
+            "no_gaps".to_string()
+        } else {
+            "success".to_string()
+        }
+    } else {
+        "partial".to_string()
+    };
+
+    Ok(Json(BackfillResponse {
+        status,
+        dates_checked: summary.dates_checked,
+        dates_with_gaps: summary.dates_with_gaps,
+        prices_fetched: summary.prices_fetched,
+        prices_stored: summary.prices_stored,
+        gaps_found: summary.gaps_found.into_iter().map(|(date, zone, missing)| GapInfo {
+            date: date.to_string(),
+            zone,
+            missing_hours: missing as i32,
+        }).collect(),
         errors: summary.errors,
         duration_ms: start.elapsed().as_millis() as u64,
     }))

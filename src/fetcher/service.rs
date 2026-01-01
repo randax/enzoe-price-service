@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -27,6 +28,16 @@ impl FetchSummary {
         self.total_prices_stored += other.total_prices_stored;
         self.errors.extend(other.errors);
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BackfillSummary {
+    pub dates_checked: usize,
+    pub dates_with_gaps: usize,
+    pub prices_fetched: usize,
+    pub prices_stored: usize,
+    pub gaps_found: Vec<(NaiveDate, String, i64)>, // (date, zone, missing_hours)
+    pub errors: Vec<String>,
 }
 
 pub struct FetcherService {
@@ -310,6 +321,126 @@ impl FetcherService {
             total_prices = summary.total_prices_stored,
             duration_ms = duration_ms,
             "Completed conditional tomorrow fetch"
+        );
+
+        Ok(summary)
+    }
+
+    #[tracing::instrument(skip(self), fields(start = %start_date, end = %end_date))]
+    pub async fn backfill_missing(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+        zone_filter: Option<Vec<String>>,
+    ) -> Result<BackfillSummary, anyhow::Error> {
+        let start = Instant::now();
+        
+        // Get zones to check
+        let all_zones = self.repository.load_zones().await?;
+        let zone_codes: Vec<String> = match &zone_filter {
+            Some(filter) => {
+                let filter_set: HashSet<&str> = filter.iter().map(|s| s.as_str()).collect();
+                all_zones
+                    .iter()
+                    .filter(|z| filter_set.contains(z.zone_code.as_str()))
+                    .map(|z| z.zone_code.clone())
+                    .collect()
+            }
+            None => all_zones.iter().map(|z| z.zone_code.clone()).collect(),
+        };
+
+        if zone_codes.is_empty() {
+            return Err(anyhow::anyhow!("No valid zones found"));
+        }
+
+        info!(zones = ?zone_codes, "Checking for gaps in price data");
+
+        // Calculate dates to check
+        let mut current = start_date;
+        let mut dates_checked = 0;
+        while current <= end_date {
+            dates_checked += 1;
+            current = current.succ_opt().unwrap();
+        }
+
+        // Find gaps in database
+        let gaps = self.repository.find_gaps(start_date, end_date, &zone_codes).await?;
+        
+        let mut summary = BackfillSummary {
+            dates_checked,
+            dates_with_gaps: 0,
+            prices_fetched: 0,
+            prices_stored: 0,
+            gaps_found: gaps.iter().map(|(d, z, c)| (*d, z.clone(), 24 - c)).collect(),
+            errors: Vec::new(),
+        };
+
+        if gaps.is_empty() {
+            info!("No gaps found in date range");
+            return Ok(summary);
+        }
+
+        // Collect unique date-zone pairs to fetch
+        let dates_to_fetch: HashSet<(NaiveDate, String)> = gaps
+            .iter()
+            .map(|(date, zone, _)| (*date, zone.clone()))
+            .collect();
+
+        summary.dates_with_gaps = dates_to_fetch.iter().map(|(d, _)| d).collect::<HashSet<_>>().len();
+
+        info!(
+            gaps_count = gaps.len(),
+            unique_date_zones = dates_to_fetch.len(),
+            "Found gaps, starting backfill"
+        );
+
+        // Create zone lookup map
+        let zone_map: std::collections::HashMap<String, BiddingZone> = all_zones
+            .into_iter()
+            .map(|z| (z.zone_code.clone(), z))
+            .collect();
+
+        // Fetch missing data
+        let mut all_prices: Vec<Price> = Vec::new();
+
+        for (date, zone_code) in dates_to_fetch {
+            let Some(zone) = zone_map.get(&zone_code) else {
+                summary.errors.push(format!("Zone {} not found", zone_code));
+                continue;
+            };
+
+            match self.client.fetch_day_ahead_prices_with_retry(zone, date).await {
+                Ok(prices) => {
+                    info!(zone = %zone_code, date = %date, count = prices.len(), "Fetched prices");
+                    summary.prices_fetched += prices.len();
+                    all_prices.extend(prices);
+                }
+                Err(EntsoeError::NoData) => {
+                    warn!(zone = %zone_code, date = %date, "No data available from ENTSO-E");
+                }
+                Err(e) => {
+                    let msg = format!("{} on {}: {}", zone_code, date, e);
+                    error!(zone = %zone_code, date = %date, error = %e, "Failed to fetch");
+                    summary.errors.push(msg);
+                }
+            }
+        }
+
+        // Store fetched prices
+        if !all_prices.is_empty() {
+            let stored = self.repository.upsert_prices(&all_prices).await?;
+            summary.prices_stored = stored;
+            info!(count = stored, "Stored backfilled prices");
+        }
+
+        info!(
+            dates_checked = summary.dates_checked,
+            dates_with_gaps = summary.dates_with_gaps,
+            prices_fetched = summary.prices_fetched,
+            prices_stored = summary.prices_stored,
+            errors = summary.errors.len(),
+            duration_ms = start.elapsed().as_millis(),
+            "Completed backfill operation"
         );
 
         Ok(summary)

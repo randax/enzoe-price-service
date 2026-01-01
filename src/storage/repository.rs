@@ -435,4 +435,67 @@ impl PriceRepository {
 
         Ok(count > 0)
     }
+
+    /// Find dates with missing hourly prices for given zones in date range
+    /// Returns list of (date, zone_code, existing_count) where existing_count < 24
+    pub async fn find_gaps(
+        &self,
+        start_date: chrono::NaiveDate,
+        end_date: chrono::NaiveDate,
+        zone_codes: &[String],
+    ) -> Result<Vec<(chrono::NaiveDate, String, i64)>, StorageError> {
+        let rows = sqlx::query(
+            r#"
+            WITH date_range AS (
+                SELECT generate_series($1::date, $2::date, '1 day'::interval)::date AS date
+            ),
+            zones AS (
+                SELECT unnest($3::varchar[]) AS zone_code
+            ),
+            date_zone_pairs AS (
+                SELECT d.date, z.zone_code
+                FROM date_range d
+                CROSS JOIN zones z
+            ),
+            price_counts AS (
+                SELECT 
+                    date(timestamp AT TIME ZONE 'UTC') AS price_date,
+                    bidding_zone,
+                    COUNT(*) AS hour_count
+                FROM electricity_prices
+                WHERE timestamp >= $1::date
+                  AND timestamp < ($2::date + interval '1 day')
+                  AND bidding_zone = ANY($3::varchar[])
+                GROUP BY date(timestamp AT TIME ZONE 'UTC'), bidding_zone
+            )
+            SELECT 
+                dzp.date,
+                dzp.zone_code,
+                COALESCE(pc.hour_count, 0) AS existing_count
+            FROM date_zone_pairs dzp
+            LEFT JOIN price_counts pc 
+                ON dzp.date = pc.price_date 
+                AND dzp.zone_code = pc.bidding_zone
+            WHERE COALESCE(pc.hour_count, 0) < 24
+            ORDER BY dzp.date, dzp.zone_code
+            "#,
+        )
+        .bind(start_date)
+        .bind(end_date)
+        .bind(zone_codes)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let gaps = rows
+            .iter()
+            .map(|row| {
+                let date: chrono::NaiveDate = row.get("date");
+                let zone_code: String = row.get("zone_code");
+                let existing_count: i64 = row.get("existing_count");
+                (date, zone_code, existing_count)
+            })
+            .collect();
+
+        Ok(gaps)
+    }
 }

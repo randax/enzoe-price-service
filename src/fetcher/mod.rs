@@ -1,3 +1,3 @@
 mod service;
 
-pub use service::{FetchSummary, FetcherService};
+pub use service::{BackfillSummary, FetchSummary, FetcherService};

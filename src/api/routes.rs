@@ -45,7 +45,8 @@ pub fn create_router(
         .route("/countries", get(handlers::list_countries));
 
     let admin_routes = Router::new()
-        .route("/fetch", post(handlers::trigger_fetch));
+        .route("/fetch", post(handlers::trigger_fetch))
+        .route("/backfill", post(handlers::backfill_prices));
 
     let cors = if std::env::var("APP_ENV").as_deref() == Ok("development") {
         CorsLayer::permissive()

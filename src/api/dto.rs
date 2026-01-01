@@ -207,6 +207,32 @@ pub struct FetchResponse {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BackfillRequest {
+    pub start: String,
+    pub end: String,
+    pub zones: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GapInfo {
+    pub date: String,
+    pub zone: String,
+    pub missing_hours: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackfillResponse {
+    pub status: String,
+    pub dates_checked: usize,
+    pub dates_with_gaps: usize,
+    pub prices_fetched: usize,
+    pub prices_stored: usize,
+    pub gaps_found: Vec<GapInfo>,
+    pub errors: Vec<String>,
+    pub duration_ms: u64,
+}
+
 impl DateRangeQuery {
     pub fn parse(&self) -> Result<(DateTime<Utc>, DateTime<Utc>), String> {
         let start = match &self.start {
